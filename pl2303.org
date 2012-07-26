@@ -23,13 +23,18 @@ figure out the chip type (mine seems to be HX):
 :   pl2303_vendor_write(2, 0x44, serial);
 : else
 :   pl2303_vendor_write(2, 0x24, serial);
-
    
 
+- when a device of type HX is opened, this is run:
 
-: 
+:  pl2303_vendor_write(8, 0, serial);
+:  pl2303_vendor_write(9, 0, serial);
+
 : co 40  1 8
 : co 40  1 9
+
+- the following is from set-termios
+
 : ci a1 33 0  -> 80 25 00 00 00 00 00
 : co 21 32 0     80 25 00 00 00 00 08
 : co 21 34 3
@@ -84,3 +89,34 @@ figure out the chip type (mine seems to be HX):
 : bo  2 "T S7=45  S0=0 ..."
 : bo  2 "m"
 : bo  2 "a" 
+
+
+- there is also break-ctl
+
+: usb_control_msg(serial->dev, usb_sndctrlpipe(serial->dev, 0),
+:                 BREAK_REQUEST, BREAK_REQUEST_TYPE, state,
+:                 0, NULL, 0, 100);
+
+- these are all request types:
+
+: #define SET_LINE_REQUEST_TYPE           0x21
+: #define SET_LINE_REQUEST                0x20
+: 
+: #define SET_CONTROL_REQUEST_TYPE        0x21
+: #define SET_CONTROL_REQUEST             0x22
+: #define CONTROL_DTR                     0x01
+: #define CONTROL_RTS                     0x02
+: 
+: #define BREAK_REQUEST_TYPE              0x21
+: #define BREAK_REQUEST                   0x23
+: #define BREAK_ON                        0xffff
+: #define BREAK_OFF                       0x0000
+: 
+: #define GET_LINE_REQUEST_TYPE           0xa1
+: #define GET_LINE_REQUEST                0x21
+: 
+: #define VENDOR_WRITE_REQUEST_TYPE       0x40
+: #define VENDOR_WRITE_REQUEST            0x01
+: 
+: #define VENDOR_READ_REQUEST_TYPE        0xc0
+: #define VENDOR_READ_REQUEST             0x01
