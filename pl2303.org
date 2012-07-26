@@ -1,6 +1,7 @@
 * kernel initialization:
 
-- there seems to be a standard called CDC ACM
+- there seems to be a standard called CDC ACM, USB Abstract Control
+  Model driver for USB modems and ISDN adapters
 
 - in the beginning several values in the configuration are checked, to
 figure out the chip type (mine seems to be HX):
@@ -145,3 +146,187 @@ figure out the chip type (mine seems to be HX):
 : 
 : #define VENDOR_READ_REQUEST_TYPE        0xc0
 : #define VENDOR_READ_REQUEST             0x01
+
+
+* proposed patch for gpio pins on a mailing list:
+Hi all,
+
+I had to use the GPIO pins of a pl2303hx USB serial chip in a project
+and I could not find any information how to control these pins under Linux.
+Playing around with the pl2303 driver and a USB analyzer,
+it turned out what kind of USB vendor requests shall be sent to control 
+those pins.
+
+I am not sure if this patch suits to the pl2303 driver, but I am 
+interested in opinions and comments.
+Maybe it can be useful for folks who would like to use the GPIO of this 
+chip.
+
+To write the register in pl2303hx IC that controls the GPIO pins, use:
+pl2303_vendor_write(1, gpio, serial);
+where gpio is the register value,
+to read the register from the IC use:
+pl2303_vendor_read(0x0081, 0, serial, buf);
+and the result is in buf[0].
+
+The GPIO control register bits:
+0..3: unknown (zero)
+4: gp0 output enable (1: gp0 pin is output, 0: gp0 pin is input)
+5: gp1 output enable (1: gp1 pin is output, 0: gp1 pin is input)
+6: gp0 pin value
+7: gp1 pin value
+
+For example writing 0xA0 to the register configures gp0 to input mode, 
+and gp1 to output high.
+
+The following patch introduces a new module parameter (gpio),
+to initialize the GPIO control register of pl2303hx in pl2303_startup,
+and a new ioctl to control it from user applications.
+
+Best Regards,
+Balint Viragh
+
+Code snippet about using the ioctl:
+
+/** ioctl to write a GPIO register */
+#define PL2303_GPIO_SET     _IOW('v', 0xac, int)
+/** ioctl to read a GPIO register */
+#define PL2303_GPIO_GET     _IOR('v', 0xac, int)
+/** macro function to set direction bit of a gpio pin */
+#define L_U8_GPIO_DIR(gpio)     ((uint8_t)(1 << ((gpio) + 4)))
+/** macro function to set the bit of a gpio pin */
+#define L_U8_GPIO_VALUE(gpio)   ((uint8_t)(1 << ((gpio) + 6)))
+
+/** Function to set pl2303 gpio pin to output
+ *
+ *  @param   fd_dev   opened file descriptor of the USB serial driver
+ *  @param   gpio     0 for gp0 pin, 1 for gp1 pin
+ *  @param   level    0: low, 1: high
+ *  @return zero in case of success
+ *
+ *  The function configures the pin specified by gpio param to output mode.
+ *  and sets the pin level according to the level parameter.
+ */
+int pl2303_gpio_out(int fd_dev, int gpio, int level)
+{
+    int res;
+    int arg;
+
+    /* read current configuration */
+    res = ioctl(fd_dev, PL2303_GPIO_GET, &arg);
+    if(res < 0) {
+        perror("ioctl get");
+        return -1;
+    }
+    /* construct new register value */
+    arg |= L_U8_GPIO_DIR(gpio);
+    if(level)
+        arg |= L_U8_GPIO_VALUE(gpio);
+    else
+        arg &= ~L_U8_GPIO_VALUE(gpio);
+    /* write new value */
+    res = ioctl(fd_dev, PL2303_GPIO_SET, &arg);
+    if(res < 0) {
+        perror("ioctl set");
+        return -1;
+    }
+    return 0;
+}
+
+The pl2303 driver patch:
+
+--- a/drivers/usb/serial/pl2303.c    2012-04-02 19:32:52.000000000 +0200
++++ b/drivers/usb/serial/pl2303.c    2012-05-29 20:54:08.000000000 +0200
+@@ -36,7 +36,14 @@
+  */
+ #define DRIVER_DESC "Prolific PL2303 USB to serial adaptor driver"
+
++/* GPIO ioctl magic number */
++#define PL2303_GPIO_MAGIC    'v'
++/* GPIO ioctl NR field */
++#define PL2303_GPIO_NR        0xac
++
+ static bool debug;
++/* initialize pl2303hx gpio pins to input */
++static int gpio = 0x00;
+
+ #define PL2303_CLOSING_WAIT    (30*HZ)
+
+@@ -223,6 +230,10 @@
+         pl2303_vendor_write(2, 0x44, serial);
+     else
+         pl2303_vendor_write(2, 0x24, serial);
++    /* initialize GPIO */
++    pl2303_vendor_write(1, gpio, serial);
++    pl2303_vendor_read(0x0081, 0, serial, buf);
++    dbg("GPIO read: 0x%x", buf[0]);
+
+     kfree(buf);
+     return 0;
+@@ -621,6 +632,50 @@
+     return 0;
+ }
+
++static int pl2303_gpio_ioctl(struct usb_serial_port* port,
++                             unsigned int cmd, unsigned long arg)
++{
++    int value;
++    unsigned char buf[10];
++    struct usb_serial* serial = NULL;
++
++    if(port)
++        serial = port->serial;
++    if(NULL == serial)
++        return -EINVAL;
++
++    /* check if it is a gpio ioctl */
++    if((PL2303_GPIO_MAGIC != _IOC_TYPE(cmd)) ||
++       (PL2303_GPIO_NR != _IOC_NR(cmd)))
++        return -ENOIOCTLCMD;
++
++    /* check argument size */
++    if(sizeof(value) != _IOC_SIZE(cmd))
++        return -EINVAL;
++
++    memset(buf, 0, sizeof(buf));
++
++    switch(_IOC_DIR(cmd)) {
++    case _IOC_READ:
++        /* read GPIO register */
++        if(pl2303_vendor_read(0x0081, 0, serial, buf) < 1)
++            return -EIO;
++        value = buf[0];
++        if(copy_to_user((void __user *)arg, &value, sizeof(value)))
++            return -EFAULT;
++        break;
++    case _IOC_WRITE:
++        if(copy_from_user(&value, (void __user*)arg, sizeof(value)))
++            return -EFAULT;
++        if(pl2303_vendor_write(1, value, serial))
++            return -EIO;
++        break;
++    default:
++        return -EINVAL;
++    }
++    return 0;
++}
++
+ static int pl2303_ioctl(struct tty_struct *tty,
+             unsigned int cmd, unsigned long arg)
+ {
+@@ -645,6 +700,9 @@
+         dbg("%s (%d) TIOCMIWAIT", __func__,  port->number);
+         return wait_modem_info(port, arg);
+     default:
++        if(PL2303_GPIO_MAGIC == _IOC_TYPE(cmd)) {
++            return pl2303_gpio_ioctl(port, cmd, arg);
++        }
+         dbg("%s not supported = 0x%04x", __func__, cmd);
+         break;
+     }
+@@ -884,5 +942,6 @@
+ MODULE_LICENSE("GPL");
+
+ module_param(debug, bool, S_IRUGO | S_IWUSR);
++module_param(gpio, int, S_IRUGO | S_IWUSR);
+ MODULE_PARM_DESC(debug, "Debug enabled or not");
