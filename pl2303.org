@@ -1,5 +1,7 @@
 * kernel initialization:
 
+- there seems to be a standard called CDC ACM
+
 - in the beginning several values in the configuration are checked, to
 figure out the chip type (mine seems to be HX):
 
@@ -23,6 +25,29 @@ figure out the chip type (mine seems to be HX):
 :   pl2303_vendor_write(2, 0x44, serial);
 : else
 :   pl2303_vendor_write(2, 0x24, serial);
+
+- in the arduino library the following commands are sent:
+
+:         /* shamanic dance - sending Prolific init data as-is */
+:         vendorRead( 0x84, 0x84, 0, buf );
+:         vendorWrite(0x04, 0x04, 0 );
+:         vendorRead( 0x84, 0x84, 0, buf );
+:         vendorRead( 0x83, 0x83, 0, buf );
+:         vendorRead( 0x84, 0x84, 0, buf );
+:         vendorWrite(0x04, 0x04, 1 );
+:         vendorRead( 0x84, 0x84, 0, buf);
+:         vendorRead( 0x83, 0x83, 0, buf);
+:         vendorWrite( 0, 0, 1 );
+:         vendorWrite( 1, 0, 0 );
+:         if ( pltype == rev_HX ) {
+:                 vendorWrite( 2, 0, 0x44 );
+:                 vendorWrite( 0x06, 0x06, 0 );   //from W7 init
+:         }
+:         else {
+:                 vendorWrite( 2, 0, 0x24 );
+:         }
+:         /* shamanic dance end */
+
    
 
 - when a device of type HX is opened, this is run:
