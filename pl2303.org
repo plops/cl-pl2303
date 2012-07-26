@@ -24,11 +24,6 @@ figure out the chip type (mine seems to be HX):
 : else
 :   pl2303_vendor_write(2, 0x24, serial);
 
-- this seems to be sufficient to generate output on the control lines
- 
-: set_control_lines(struct usb_device *dev, u8 value):
-:   usb_control_msg(dev, usb_sndctrlpipe(dev, 0), SET_CONTROL_REQUEST = 0x22,
-:                   SET_CONTROL_REQUEST_TYPE = 0x21, value, 0, NULL, 0, 100);
    
 
 
@@ -41,10 +36,15 @@ figure out the chip type (mine seems to be HX):
 : ci a1 33 0  -> 80 25 00 00 00 00 08
 : co 40  1 0
 : co 21 34 3
+
+- the module checks the current baud rate settings and sets something new:
+
 : ci a1 33 0  -> 80 25 00 00 00 00 08    line-request-type, this gets the value from the device with usb_rcvctrlpipe
 : co 21 32 0     00 c2 01 00 00 00 08    line-request,      this sets the new configuration with usb_sndctrlpipe
 :                ;;;baud;;;; SB PA CS
-: 
+
+- here is how the bytes can be decoded into 115200 8N1
+
 : baud .. baud rate
 : #x2580  = 9600
 : #x01c200 = 115200
@@ -55,10 +55,18 @@ figure out the chip type (mine seems to be HX):
 : SB .. stop bits: 0 is 1 stop bit, 1 is 1.5 stop bits, 2 is 2 stop bits 
 : PA .. parity: 0 none, 1 odd, 2 even, 3 mark, 4 space
 : CS .. data bits: can be 5,6,7 or 8
-: 
-: for crtscts they issue vendor-write 0 0x61
-: 
-: 
+
+- for crtscts they issue vendor-write 0 0x61, but i'm not sure if
+  minicom set this in my test
+
+- a single vendor control request seems to be sufficient to generate
+  output on the control lines
+ 
+: set_control_lines(struct usb_device *dev, u8 value):
+:   usb_control_msg(dev, usb_sndctrlpipe(dev, 0), SET_CONTROL_REQUEST = 0x22,
+:                   SET_CONTROL_REQUEST_TYPE = 0x21, value, 0, NULL, 0, 100);
+
+ 
 : ci a1 33 0  -> 00 c2 01 00 00 00 08
 : co 40  1 0                             vendor-write-request-type
 : co 21 34 3                             
