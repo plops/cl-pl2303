@@ -9,16 +9,17 @@ co 40  1 0
 co 21 34 3
 ci a1 33 0  -> 80 25 00 00 00 00 08    line-request-type
 co 21 32 0     00 c2 01 00 00 00 08    line-request
-               ;;;baud;;;;       CS
+               ;;;baud;;;; SB PA CS
 
-baud 
+baud .. baud rate
 #x2580  = 9600
 #x01c200 = 115200
 : const int baud_sup[] = { 75, 150, 300, 600, 1200, 1800, 2400, 3600,
 :                          4800, 7200, 9600, 14400, 19200, 28800, 38400,
 :                          57600, 115200, 230400, 460800, 614400,
 :                          921600, 1228800, 2457600, 3000000, 6000000 };
-
+SB .. stop bits: 0 is 1 stop bit, 1 is 1.5 stop bits, 2 is 2 stop bits 
+PA .. parity: 0 none, 1 odd, 2 even, 3 mark, 4 space
 CS .. data bits: can be 5,6,7 or 8
 
 
