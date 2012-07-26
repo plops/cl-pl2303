@@ -1,66 +1,78 @@
 * kernel initialization:
 
-when descriptor.bMaxPacketSize0 == 0x40
-  type = HX
-(mine seems to be HX)
+- in the beginning several values in the configuration are checked, to
+figure out the chip type (mine seems to be HX):
+
+: when descriptor.bMaxPacketSize0 == 0x40
+:   type = HX 
 
 
-pl2303_vendor_read(0x8484, 0, serial, buf);
-pl2303_vendor_write(0x0404, 0, serial);
-pl2303_vendor_read(0x8484, 0, serial, buf);
-pl2303_vendor_read(0x8383, 0, serial, buf);
-pl2303_vendor_read(0x8484, 0, serial, buf);
-pl2303_vendor_write(0x0404, 1, serial);
-pl2303_vendor_read(0x8484, 0, serial, buf);
-pl2303_vendor_read(0x8383, 0, serial, buf);
-pl2303_vendor_write(0, 1, serial);
-pl2303_vendor_write(1, 0, serial);
-if (type == HX)
-  pl2303_vendor_write(2, 0x44, serial);
-else
-  pl2303_vendor_write(2, 0x24, serial);
+- then it issues several commands:
+
+: pl2303_vendor_read(0x8484, 0, serial, buf);
+: pl2303_vendor_write(0x0404, 0, serial);
+: pl2303_vendor_read(0x8484, 0, serial, buf);
+: pl2303_vendor_read(0x8383, 0, serial, buf);
+: pl2303_vendor_read(0x8484, 0, serial, buf);
+: pl2303_vendor_write(0x0404, 1, serial);
+: pl2303_vendor_read(0x8484, 0, serial, buf);
+: pl2303_vendor_read(0x8383, 0, serial, buf);
+: pl2303_vendor_write(0, 1, serial);
+: pl2303_vendor_write(1, 0, serial);
+: if (type == HX)
+:   pl2303_vendor_write(2, 0x44, serial);
+: else
+:   pl2303_vendor_write(2, 0x24, serial);
+
+- this seems to be sufficient to generate output on the control lines
+ 
+: set_control_lines(struct usb_device *dev, u8 value):
+:   usb_control_msg(dev, usb_sndctrlpipe(dev, 0), SET_CONTROL_REQUEST = 0x22,
+:                   SET_CONTROL_REQUEST_TYPE = 0x21, value, 0, NULL, 0, 100);
+   
 
 
-co 40  1 8
-co 40  1 9
-ci a1 33 0  -> 80 25 00 00 00 00 00
-co 21 32 0     80 25 00 00 00 00 08
-co 21 34 3
-ci a1 33 0  -> 80 25 00 00 00 00 08
-co 40  1 0
-co 21 34 3
-ci a1 33 0  -> 80 25 00 00 00 00 08    line-request-type, this gets the value from the device with usb_rcvctrlpipe
-co 21 32 0     00 c2 01 00 00 00 08    line-request,      this sets the new configuration with usb_sndctrlpipe
-               ;;;baud;;;; SB PA CS
-
-baud .. baud rate
-#x2580  = 9600
-#x01c200 = 115200
+: 
+: co 40  1 8
+: co 40  1 9
+: ci a1 33 0  -> 80 25 00 00 00 00 00
+: co 21 32 0     80 25 00 00 00 00 08
+: co 21 34 3
+: ci a1 33 0  -> 80 25 00 00 00 00 08
+: co 40  1 0
+: co 21 34 3
+: ci a1 33 0  -> 80 25 00 00 00 00 08    line-request-type, this gets the value from the device with usb_rcvctrlpipe
+: co 21 32 0     00 c2 01 00 00 00 08    line-request,      this sets the new configuration with usb_sndctrlpipe
+:                ;;;baud;;;; SB PA CS
+: 
+: baud .. baud rate
+: #x2580  = 9600
+: #x01c200 = 115200
 : const int baud_sup[] = { 75, 150, 300, 600, 1200, 1800, 2400, 3600,
 :                          4800, 7200, 9600, 14400, 19200, 28800, 38400,
 :                          57600, 115200, 230400, 460800, 614400,
 :                          921600, 1228800, 2457600, 3000000, 6000000 };
-SB .. stop bits: 0 is 1 stop bit, 1 is 1.5 stop bits, 2 is 2 stop bits 
-PA .. parity: 0 none, 1 odd, 2 even, 3 mark, 4 space
-CS .. data bits: can be 5,6,7 or 8
-
-for crtscts they issue vendor-write 0 0x61
-
-
-ci a1 33 0  -> 00 c2 01 00 00 00 08
-co 40  1 0                             vendor-write-request-type
-co 21 34 3                             
-ci a1 33 0  -> 00 c2 01 00 00 00 08
-co 21 32 0  -> 00 c2 01 00 00 00 08
-ci a1 33 0
-co 40  1 0 index=97
-ci a1 33 0  -> 00 c2 01 00 00 00 08
-co 21 32 0     00 c2 01 00 00 00 08
-co 21 34 3 
-ci a1 33 0  -> 00 c2 01 00 00 00 08
-co 40  1 0 index=97
-bo  2 0d 
-bo  2 41
-bo  2 "T S7=45  S0=0 ..."
-bo  2 "m"
-bo  2 "a" 
+: SB .. stop bits: 0 is 1 stop bit, 1 is 1.5 stop bits, 2 is 2 stop bits 
+: PA .. parity: 0 none, 1 odd, 2 even, 3 mark, 4 space
+: CS .. data bits: can be 5,6,7 or 8
+: 
+: for crtscts they issue vendor-write 0 0x61
+: 
+: 
+: ci a1 33 0  -> 00 c2 01 00 00 00 08
+: co 40  1 0                             vendor-write-request-type
+: co 21 34 3                             
+: ci a1 33 0  -> 00 c2 01 00 00 00 08
+: co 21 32 0  -> 00 c2 01 00 00 00 08
+: ci a1 33 0
+: co 40  1 0 index=97
+: ci a1 33 0  -> 00 c2 01 00 00 00 08
+: co 21 32 0     00 c2 01 00 00 00 08
+: co 21 34 3 
+: ci a1 33 0  -> 00 c2 01 00 00 00 08
+: co 40  1 0 index=97
+: bo  2 0d 
+: bo  2 41
+: bo  2 "T S7=45  S0=0 ..."
+: bo  2 "m"
+: bo  2 "a" 
