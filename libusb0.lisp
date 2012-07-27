@@ -150,12 +150,50 @@
 (usb-find-busses)
 #+nil
 (usb-find-devices)
+
+(defun get-busses ()
+  (loop with bus = (usb-get-busses)
+       until (null-pointer-p bus)
+       collect bus
+       do (setf bus (foreign-slot-value bus 'usb_bus 'next))))
+
 #+nil
-(loop with dev = (foreign-slot-value 
-		  (usb-get-busses) 'usb_bus
-		  'devices)
-   until (null-pointer-p dev)
-   collect dev
-     do (setf dev (foreign-slot-value 
-		   dev 'usb_device 
-		   'next)))
+(get-busses)
+
+(defun get-devices* (bus)
+ (loop with dev = (foreign-slot-value 
+		   bus 'usb_bus
+		   'devices)
+    until (null-pointer-p dev)
+    collect dev
+    do (setf dev (foreign-slot-value 
+		  dev 'usb_device 
+		  'next))))
+
+(defun get-devices (&optional (bus-or-list (get-busses)))
+  (if (listp bus-or-list)
+      (loop for bus in bus-or-list
+	   nconcing (get-devices* bus))
+      (get-devices* bus-or-list)))
+
+#+nil
+(get-devices)
+
+(defun get-vendor-id (dev)
+  (foreign-slot-value 
+   (foreign-slot-value dev 'usb_device 
+		       'descriptor)
+   'usb_device_descriptor
+   'idvendor))
+
+(defun get-product-id (dev)
+  (foreign-slot-value 
+   (foreign-slot-value dev 'usb_device 
+		       'descriptor)
+   'usb_device_descriptor
+   'idproduct))
+
+#+nil
+(loop for e in (get-devices) collect
+     (format nil "~4,'0x:~4,'0x" (get-vendor-id e)
+	     (get-product-id e)))
