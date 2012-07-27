@@ -93,8 +93,35 @@
   (location :u_int32_t)
   (root-dev (:pointer :usb_device)))
 
+(defcfun "usb_get_busses" (:pointer :usb_bus))
+(defctype :phandle :pointer)
+(defcfun "usb_open" :phandle (dev (:pointer :usb_device)))
+(defcfun "usb_close" :int (handle :phandle))
+(defcfun "usb_set_configuration" :int
+  (handle :phandle)
+  (configuration :int))
+(defcfun "usb_claim_interface" :int
+  (handle :phandle)
+  (interface :int))
+(defcfun "usb_release_interface" :int
+  (handle :phandle)
+  (interface :int))
+(defcfun "usb_bulk_read" :int
+  (handle :phandle)
+  (endpoint :int)
+  (bytes (:pointer :uint8))
+  (size :int)
+  (timout_ms :int))
+(defcfun "usb_bulk_write" :int
+  (handle :phandle)
+  (endpoint :int)
+  (bytes (:pointer :uint8))
+  (size :int)
+  (timout_ms :int))
+
+
 (usb-init)
 (usb-find-busses)
 (usb-find-devices)
-
+(usb-get-busses)
 
