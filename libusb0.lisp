@@ -75,7 +75,7 @@
 ;; };
 
 ;;find /usr/include/|grep -ir limits|xargs fgrep PATH_MAX
-(defconstant +path-max+ 4096)
+#.(defconstant +path-max+ 4096)
 
 (defcstruct usb_device
   (next (:pointer usb_device_descriptor))
