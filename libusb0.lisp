@@ -265,7 +265,10 @@
 		 :interface nil
 		 ;:endpoint #x83 ; 2 #x81 #x83
 		 ))
-/
+;;if (ps->dev->state != USB_STATE_CONFIGURED)
+;;                retval = -EHOSTUNREACH;
+;;[pid 30032] ioctl(5, USBDEVFS_IOCTL or USBDEVFS_IOCTL32, 0x7ffff5595790) = -1 EHOSTUNREACH (No route to host)
+
 
 (defmethod bulk-write ((c usb-connection) data 
 		       &key (endpoint 0) (timeout-ms 1000))
@@ -298,18 +301,20 @@
 			request &key (value 0) (index 0) (data nil) 
 			(timeout-ms 1000))
   (let* ((len 
-	  (check
-	   (if data
-	       (with-pointer-to-vector-data (ptr data)
-		 (usb-control-msg (slot-value c 'handle)
-				  request-type request value index 
-				  ptr (length data) timeout-ms))
-	       (usb-control-msg (slot-value c 'handle)
-				request-type request value index 
-				null-pointer 0 timeout-ms)))))
+	  (if data
+	      (with-pointer-to-vector-data (ptr data)
+		(usb-control-msg (slot-value c 'handle)
+				 request-type request value index 
+				 ptr (length data) timeout-ms))
+	      (usb-control-msg (slot-value c 'handle)
+			       request-type request value index 
+			       (null-pointer) 0 timeout-ms))))
     (unless (= len (length data))
-	(error "control-msg: only ~d of ~d bytes sent" len (length data)))))
+	(error "control-msg: only ~d of ~d bytes sent" len (length data)))
+    len))
 
+#+nil
+(usb-claim-interface (slot-value *bla* 'handle) 0)
 
 #+nil
 (let ((l (loop for i below 40 collect i)))
@@ -326,7 +331,7 @@
   `(progn 
      ,@(loop for (e f) in '((set-line-request-type #x21)
 			    (set-line-request #x20)
-			    (set-control-request-typ #x21)
+			    (set-control-request-type #x21)
 			    (set-control-request #x22)
 			    (control-dtr 1)
 			    (control-rts 2)
@@ -340,19 +345,63 @@
 			    (vendor-write-request 1)
 			    (vendor-read-request-type #xc0)
 			    (vendor-read-request 1))
-	  collect
+	 collect
 	    `(defconstant ,(intern (format nil "+~A+" e)) ,f))))
 
 (define-pl2303-constants)
 
 (defmethod pl2303-vendor-write ((c usb-connection) value index)
-  (declare (type (unsigned-int 16) value index))
+  (declare (type (unsigned-byte 16) value index))
   (control-msg c +vendor-write-request-type+ +vendor-write-request+
 	       :value value :index index))
 
 (defmethod pl2303-vendor-read ((c usb-connection) value index)
-  (declare (type (unsigned-int 16) value index))
+  (declare (type (unsigned-byte 16) value index))
   (let ((data (make-array 1 :element-type '(unsigned-byte 8))))
    (values (control-msg c +vendor-read-request-type+ +vendor-read-request+
 			:value value :index index :data data)
 	   (aref data 0))))
+
+(defmethod get-line ((c usb-connection))
+ (let ((data (make-array 7 :element-type '(unsigned-byte 8))))
+   (control-msg c
+		+get-line-request-type+ +get-line-request+
+		:data data)
+   data))
+
+(defmethod set-line ((c usb-connection))
+  (let ((data (make-array 7
+			  :element-type '(unsigned-byte 8)
+			  :initial-contents '(#x80 #x25 #x00 #x00 #x00 #x00 #x08))))
+    (control-msg c +set-line-request-type+ +set-line-request+
+		 :data data)
+   data))
+#+nil
+(set-line *bla*)
+
+#+nil
+(loop for (e f g) in '((r #x8484 0)
+		       (w #x0404 0)
+		       (r #x8484 0)
+		       (r #x8383 0)
+		       (r #x8484 0)
+		       (w #x0404 1)
+		       (r #x8484 0)
+		       (r #x8383 0)
+		       (w 0 1)
+		       (w 1 0)
+		       (w 2 #x44)
+		       (w #x0606 0)
+		       (w 8 0)
+		       (w 9 0))
+   collect
+     (ecase e
+       ('r (pl2303-vendor-read *bla* f g))
+       ('w (pl2303-vendor-write *bla* f g))))
+
+(defmethod set-control-lines ((c usb-connection) value)
+  (declare (type (unsigned-byte 8) value))
+  (control-msg c +set-control-request-type+ +set-control-request+ :value value))
+
+#+nil
+(set-control-lines *bla* 0)

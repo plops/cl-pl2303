@@ -76,6 +76,7 @@ figure out the chip type (mine seems to be HX):
 
 - here is how the bytes can be decoded into 115200 8N1
 
+: see CDC PSTN 120
 : baud .. baud rate
 : #x2580  = 9600
 : #x01c200 = 115200
