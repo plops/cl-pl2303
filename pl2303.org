@@ -147,7 +147,7 @@ figure out the chip type (mine seems to be HX):
 : #define VENDOR_READ_REQUEST_TYPE        0xc0
 : #define VENDOR_READ_REQUEST             0x01
 
-
+  
 * proposed patch for gpio pins on a mailing list:
 Hi all,
 
