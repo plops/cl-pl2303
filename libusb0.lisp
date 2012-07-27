@@ -12,21 +12,7 @@
 
 (define-foreign-library libusb0
   (t (:default "libusb")))
-
-
-
-(defmethod translate-name-from-foreign ((spec string)
-					(package (eql *package*))
-					&optional varp)
-  (let ((sym (intern 
-	      (format nil "%~A"
-		      (translate-underscore-separated-name spec)))))
-    (if varp
-	(values (intern (format nil "*~A*"
-				(cffi::canonicalize-symbol-name-case
-				 (symbol-name sym)))))
-	sym)))
-
+ 
 (defcfun "usb_init" :void)
 (defcfun "usb_find_busses" :int)
 (defcfun "usb_find_devices" :int)
@@ -233,10 +219,10 @@
 
 (defclass usb-connection ()
   ((device :reader device :initarg :device :type 'fixnum)
-   (handle :reader handle :initarg :device :type 'fixnum)
-   (endpoint :reader endpoint :initarg :device :type 'fixnum)
+   (handle :reader handle :initarg :handle :type 'fixnum)
+   (endpoint :reader endpoint :initarg :endpoint :type 'fixnum)
    (configuration :reader configuration :initarg :configuration :type 'fixnum)
-   (interface :reader interface :initarg :device :type 'fixnum)))
+   (interface :reader interface :initarg :interface :type 'fixnum)))
 
 (defmethod initialize-instance :after ((c usb-connection) &key (vendor-id nil)
 				       (product-id nil) 
@@ -269,3 +255,16 @@
 		 :interface 0
 		 :endpoint 2 ; #x81 #x83
 		 ))
+
+(defmethod bulk-write ((c usb-connection) data 
+		       &key (endpoint nil) (timeout-ms 1000))
+  (declare (type (simple-array (unsigned-byte 8) 1) data))
+  (with-slots ((h handle))
+   (let* ((ep (if endpoint
+		  endpoint
+		  (slot-value c 'endpoint)))
+	  (len (with-pointer-to-vector-data (ptr data)
+		 (usb-bulk-write h ep ptr (length data)))))
+     (unless (= len (length data))
+       (error "libusb0: couldn't write all data."))
+     len)))
