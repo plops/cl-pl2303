@@ -1,14 +1,19 @@
 (eval-when (:compile-toplevel)
  (require :cffi))
 (defpackage :libusb0
-  (:use :cl :cffi))
+  (:use :cl :cffi)
+  (:export
+   :get-vendor-id
+   :get-product-id
+   :get-devices-by-ids
+   :ensure-libusb0-initialized))
 
 (in-package :libusb0)
 
 (define-foreign-library libusb0
   (t (:default "libusb")))
 
-(use-foreign-library libusb0)
+
 
 (defmethod translate-name-from-foreign ((spec string)
 					(package (eql *package*))
@@ -151,7 +156,24 @@
 #+nil
 (usb-find-devices)
 
+(defmacro check (&body body)
+  `(let ((val (progn ,@body)))
+     (if (< val 0)
+	 (error (format nil "libusb error: ~a returned ~a." ',@body val))
+	 val)))
+
+(defvar *libusb0-initialized* nil)
+(defvar *libusb0-shared-object* nil)
+(defun ensure-libusb0-initialized ()
+  (unless *libusb0-initialized*
+    (setf *libusb0-shared-object* (use-foreign-library libusb0))
+    (usb-init)
+    (setf *libusb0-initialized* t))
+  (list (usb-find-busses)
+	(usb-find-devices)))
+
 (defun get-busses ()
+  (ensure-libusb0-initialized)
   (loop with bus = (usb-get-busses)
        until (null-pointer-p bus)
        collect bus
@@ -181,7 +203,7 @@
 
 (defun get-vendor-id (dev)
   (foreign-slot-value 
-   (foreign-slot-value dev 'usb_device 
+  (foreign-slot-value dev 'usb_device 
 		       'descriptor)
    'usb_device_descriptor
    'idvendor))
@@ -197,3 +219,53 @@
 (loop for e in (get-devices) collect
      (format nil "~4,'0x:~4,'0x" (get-vendor-id e)
 	     (get-product-id e)))
+
+(defun get-devices-by-ids (&key (vendor-id nil) (product-id nil))
+  (flet ((ids-match (dev)
+	   (and (or (null vendor-id)
+		    (= vendor-id (get-vendor-id dev)))
+		(or (null product-id)
+		    (= product-id (get-product-id dev))))))
+    (delete-if-not #'ids-match (get-devices))))
+
+#+nil
+(get-devices-by-ids :vendor-id #x067b :product-id #x2303)
+
+(defclass usb-connection ()
+  ((device :reader device :initarg :device :type 'fixnum)
+   (handle :reader handle :initarg :device :type 'fixnum)
+   (endpoint :reader endpoint :initarg :device :type 'fixnum)
+   (configuration :reader configuration :initarg :configuration :type 'fixnum)
+   (interface :reader interface :initarg :device :type 'fixnum)))
+
+(defmethod initialize-instance :after ((c usb-connection) &key (vendor-id nil)
+				       (product-id nil) 
+				       (device (first (get-devices-by-ids :vendor-id vendor-id
+									  :product-id product-id)))
+				       (endpoint 0)
+				       (configuration 0)
+				       (interface 0))
+  (with-slots ((d device) (h handle) (ep endpoint) (conf configuration) (int interface))
+      c
+    (when (null-pointer-p device)
+      (error "device is null."))
+    (setf d device
+	  h (usb-open d)
+	  ep endpoint)
+    (when (null-pointer-p h)
+      (error "usb-open didn't succeed."))
+    (check (usb-set-configuration h configuration))
+    (setf conf configuration)
+    (check (usb-claim-interface h interface))
+    (setf int interface))
+  c)
+
+#+nil
+(defparameter *bla*
+  (make-instance 'usb-connection
+		 :vendor-id #x067b
+		 :product-id #x2303
+		 :configuration 0
+		 :interface 0
+		 :endpoint 2 ; #x81 #x83
+		 ))
