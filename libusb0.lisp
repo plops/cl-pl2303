@@ -220,31 +220,41 @@
 (defclass usb-connection ()
   ((device :reader device :initarg :device :type 'fixnum)
    (handle :reader handle :initarg :handle :type 'fixnum)
-   (endpoint :reader endpoint :initarg :endpoint :type 'fixnum)
    (configuration :reader configuration :initarg :configuration :type 'fixnum)
-   (interface :reader interface :initarg :interface :type 'fixnum)))
+   (interface :reader interface :initarg :interface :initform nil :type '(or null fixnum))))
 
 (defmethod initialize-instance :after ((c usb-connection) &key (vendor-id nil)
 				       (product-id nil) 
 				       (device (first (get-devices-by-ids :vendor-id vendor-id
 									  :product-id product-id)))
-				       (endpoint 0)
 				       (configuration 0)
-				       (interface 0))
-  (with-slots ((d device) (h handle) (ep endpoint) (conf configuration) (int interface))
+				       (interface nil))
+  (with-slots ((d device) (h handle) (conf configuration) (int interface))
       c
     (when (null-pointer-p device)
       (error "device is null."))
+    
     (setf d device
-	  h (usb-open d)
-	  ep endpoint)
+	  h (usb-open d))
     (when (null-pointer-p h)
       (error "usb-open didn't succeed."))
-    (check (usb-set-configuration h configuration))
+    
+    (when (< (usb-set-configuration h configuration) 0)
+      (error "make sure the pl2303 is removed and you have permission to write to the usb device. SYSFS{idVendor}==\"067b\", MODE=\"0666\" to udev rules."))
+    
     (setf conf configuration)
-    (check (usb-claim-interface h interface))
-    (setf int interface))
-  c)
+    (when interface 
+      (when (< (usb-claim-interface h interface) 0)
+	(error "can't claim interface")))
+    (setf int interface)
+    c))
+
+
+
+(defmethod close-connection ((c usb-connection))
+  (with-slots (handle interface) c
+    (usb-release-interface handle interface)
+    (usb-close handle)))
 
 #+nil
 (defparameter *bla*
@@ -252,19 +262,97 @@
 		 :vendor-id #x067b
 		 :product-id #x2303
 		 :configuration 0
-		 :interface 0
-		 :endpoint 2 ; #x81 #x83
+		 :interface nil
+		 ;:endpoint #x83 ; 2 #x81 #x83
 		 ))
+/
 
 (defmethod bulk-write ((c usb-connection) data 
-		       &key (endpoint nil) (timeout-ms 1000))
+		       &key (endpoint 0) (timeout-ms 1000))
   (declare (type (simple-array (unsigned-byte 8) 1) data))
-  (with-slots ((h handle))
-   (let* ((ep (if endpoint
-		  endpoint
-		  (slot-value c 'endpoint)))
-	  (len (with-pointer-to-vector-data (ptr data)
-		 (usb-bulk-write h ep ptr (length data)))))
-     (unless (= len (length data))
-       (error "libusb0: couldn't write all data."))
-     len)))
+  (let ((len (with-pointer-to-vector-data (ptr data)
+	       (check 
+		 (usb-bulk-write (slot-value c 'handle)
+				 endpoint ptr (length data)
+				 timeout-ms)))))
+    (unless (= len (length data))
+      (error "libusb0: only wrote ~d of ~d bytes." len (length data)))
+    len))
+
+(defmethod bulk-read ((c usb-connection) bytes-to-read 
+		      &key (endpoint 0) (timeout-ms 1000))
+  (let ((data (make-array bytes-to-read :element-type '(unsigned-byte 8))))
+    (let ((len (with-pointer-to-vector-data (ptr data)
+		 (check
+		   (usb-bulk-read (slot-value c 'handle)
+				  endpoint
+				  ptr
+				  bytes-to-read
+				  timeout-ms)))))
+      (if (= len bytes-to-read)
+	  data
+	  (subseq data 0 len)))))
+
+
+(defmethod control-msg ((c usb-connection) request-type
+			request &key (value 0) (index 0) (data nil) 
+			(timeout-ms 1000))
+  (let* ((len 
+	  (check
+	   (if data
+	       (with-pointer-to-vector-data (ptr data)
+		 (usb-control-msg (slot-value c 'handle)
+				  request-type request value index 
+				  ptr (length data) timeout-ms))
+	       (usb-control-msg (slot-value c 'handle)
+				request-type request value index 
+				null-pointer 0 timeout-ms)))))
+    (unless (= len (length data))
+	(error "control-msg: only ~d of ~d bytes sent" len (length data)))))
+
+
+#+nil
+(let ((l (loop for i below 40 collect i)))
+  (bulk-write *bla* (make-array (length l)
+				:element-type '(unsigned-byte 8)
+				:initial-contents l)
+	      :endpoint 2))
+
+#+nil
+(bulk-read *bla* 40 :endpoint #x83)
+
+
+(defmacro define-pl2303-constants ()
+  `(progn 
+     ,@(loop for (e f) in '((set-line-request-type #x21)
+			    (set-line-request #x20)
+			    (set-control-request-typ #x21)
+			    (set-control-request #x22)
+			    (control-dtr 1)
+			    (control-rts 2)
+			    (break-request-type #x21)
+			    (break-request #x23)
+			    (break-on #xffff)
+			    (break-off #x0000)
+			    (get-line-request-type #xa1)
+			    (get-line-request #x21)
+			    (vendor-write-request-type #x40)
+			    (vendor-write-request 1)
+			    (vendor-read-request-type #xc0)
+			    (vendor-read-request 1))
+	  collect
+	    `(defconstant ,(intern (format nil "+~A+" e)) ,f))))
+
+(define-pl2303-constants)
+
+(defmethod pl2303-vendor-write ((c usb-connection) value index)
+  (declare (type (unsigned-int 16) value index))
+  (control-msg c +vendor-write-request-type+ +vendor-write-request+
+	       :value value :index index))
+
+(defmethod pl2303-vendor-read ((c usb-connection) value index)
+  (declare (type (unsigned-int 16) value index))
+  (let ((data (make-array 1 :element-type '(unsigned-byte 8))))
+   (values (control-msg c +vendor-read-request-type+ +vendor-read-request+
+			:value value :index index :data data)
+	   (aref data 0))))
