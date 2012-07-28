@@ -38,8 +38,9 @@
   (bNumConfigurations u_int8_t))
 
 ;;find /usr/include/|grep -ir limits|xargs fgrep PATH_MAX
-;;#.(defconstant +path-max+ 4096)
-#.(defconstant +path-max+ (1- 512)) ;; windows
+#+win32 #.(defconstant +path-max+ (1- 512)) ;; windows
+#+linux #.(defconstant +path-max+ 4096)
+
 
 (defcstruct usb_device
   (next (:pointer usb_device_descriptor))
@@ -302,8 +303,23 @@
 				 :initial-contents l)
 	       :endpoint 2)))
 
+(let* ((str "ZA1000;")
+       (a (make-array (length str)
+		      :element-type '(unsigned-byte 8)
+		      :initial-contents (map 'list #'char-code str))))
+  (bulk-write *bla* a :endpoint 2))
+
+(let* ((str "Zi;")
+       (a (make-array (length str)
+		      :element-type '(unsigned-byte 8)
+		      :initial-contents (map 'list #'char-code str))))
+  (bulk-write *bla* a :endpoint 2))
+
 #+nil
-(bulk-read *bla* 40 :endpoint #x83)
+(map 'string #'code-char
+ (bulk-read *bla* #x5 :endpoint #x83))
+
+
 
 
 (defmacro define-pl2303-constants ()
@@ -353,7 +369,7 @@
 (defmethod set-line ((c usb-connection))
   (let ((data (make-array 7
 			  :element-type '(unsigned-byte 8)
-			  :initial-contents '(#x80 #x25 #x00 #x00 #x00 #x00 #x08))))
+			  :initial-contents '(#x80 #x25 #x00 #x00 #x02 #x00 #x08))))
     (control-msg c +set-line-request-type+ +set-line-request+
 		 :data data)
    data))
@@ -394,6 +410,9 @@
        ('r (pl2303-vendor-read *bla* f g))
        ('w (pl2303-vendor-write *bla* f g))))
 
+#+nil
+(pl2303-vendor-write *bla* 0 #x61) ;; crtscts
+
 (defmethod set-control-lines ((c usb-connection) value)
   (declare (type (unsigned-byte 8) value))
   (control-msg c +set-control-request-type+ +set-control-request+ :value value))
@@ -401,3 +420,4 @@
 #+nil
 (loop for i below 100001 do
      (set-control-lines *bla* (if (evenp i) #x00 #xff)))
+
