@@ -323,7 +323,7 @@
     len))
 
 #+nil
-(let ((l (loop for i below #x40 collect i)))
+(let ((l (loop for i below #x40 collect 0)))
   (bulk-write *bla* (make-array (length l)
 				:element-type '(unsigned-byte 8)
 				:initial-contents l)
@@ -412,4 +412,5 @@
   (control-msg c +set-control-request-type+ +set-control-request+ :value value))
 
 #+nil
-(set-control-lines *bla* 0)
+(loop for i below 10001 do
+     (set-control-lines *bla* (if (evenp i) #x00 #xff)))
