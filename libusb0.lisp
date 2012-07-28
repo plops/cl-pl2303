@@ -302,7 +302,7 @@
 				  bytes-to-read
 				  timeout-ms)))))
       (if (= len bytes-to-read)
-	  data
+	  data*
 	  (subseq data 0 len)))))
 
 
@@ -323,11 +323,14 @@
     len))
 
 #+nil
-(let ((l (loop for i below #x40 collect 0)))
-  (bulk-write *bla* (make-array (length l)
-				:element-type '(unsigned-byte 8)
-				:initial-contents l)
-	      :endpoint 2))
+(defparameter *dobla* t)
+#+nil
+(loop while *dobla* do
+ (let ((l (loop for i below #x40 collect #b01010101)))
+   (bulk-write *bla* (make-array (length l)
+				 :element-type '(unsigned-byte 8)
+				 :initial-contents l)
+	       :endpoint 2)))
 
 #+nil
 (bulk-read *bla* 40 :endpoint #x83)
@@ -380,10 +383,17 @@
 (defmethod set-line ((c usb-connection))
   (let ((data (make-array 7
 			  :element-type '(unsigned-byte 8)
-			  :initial-contents '(#x80 #x25 #x00 #x00 #x00 #x00 #x08))))
+			  :initial-contents '(#x00 #xc0 #x12 #x00 #x00 #x00 #x08))))
     (control-msg c +set-line-request-type+ +set-line-request+
 		 :data data)
    data))
+;; 9600   80 25
+;; 115200 00 c2 01 00
+;; 230400 00 84 03 00
+;; 921600 00 10 0e
+;; 1228800 00 c0 12 ;; 580kHz when sending #b01010101 
+;; 2457600 00 80 25 00 ;; this doesn't look right anymore
+;; 6000000 005B8D80
 #+nil
 (set-line *bla*)
 
