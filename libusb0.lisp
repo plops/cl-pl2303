@@ -261,13 +261,22 @@
   (make-instance 'usb-connection
 		 :vendor-id #x067b
 		 :product-id #x2303
-		 :configuration 0
-		 :interface nil
-		 ;:endpoint #x83 ; 2 #x81 #x83
+		 :configuration 1
+		 :interface 0
+		 ;:endpoint #x83 ; 2 #x81 #x83qu
 		 ))
 ;;if (ps->dev->state != USB_STATE_CONFIGURED)
 ;;                retval = -EHOSTUNREACH;
 ;;[pid 30032] ioctl(5, USBDEVFS_IOCTL or USBDEVFS_IOCTL32, 0x7ffff5595790) = -1 EHOSTUNREACH (No route to host)
+;;[pid 30032] ioctl(5, USBDEVFS_SETCONFIGURATION, 0x7ffff559593c) = 0
+
+#+nil
+(usb-set-configuration (slot-value *bla* 'handle)
+		       1)
+
+
+#+nil
+(usb-claim-interface (slot-value *bla* 'handle) 0)
 
 
 (defmethod bulk-write ((c usb-connection) data 
@@ -314,10 +323,7 @@
     len))
 
 #+nil
-(usb-claim-interface (slot-value *bla* 'handle) 0)
-
-#+nil
-(let ((l (loop for i below 40 collect i)))
+(let ((l (loop for i below #x40 collect i)))
   (bulk-write *bla* (make-array (length l)
 				:element-type '(unsigned-byte 8)
 				:initial-contents l)
@@ -368,6 +374,8 @@
 		+get-line-request-type+ +get-line-request+
 		:data data)
    data))
+#+nil
+(get-line *bla*)
 
 (defmethod set-line ((c usb-connection))
   (let ((data (make-array 7
