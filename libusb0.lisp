@@ -38,7 +38,8 @@
   (bNumConfigurations u_int8_t))
 
 ;;find /usr/include/|grep -ir limits|xargs fgrep PATH_MAX
-#.(defconstant +path-max+ 4096)
+;;#.(defconstant +path-max+ 4096)
+#.(defconstant +path-max+ (1- 512)) ;; windows
 
 (defcstruct usb_device
   (next (:pointer usb_device_descriptor))
