@@ -11,6 +11,7 @@
 (in-package :libusb0)
 
 (define-foreign-library libusb0
+  (:windows "C:/Users/martin/Downloads/libusb-win32-bin-1.2.6.0/libusb-win32-bin-1.2.6.0/bin/amd64/libusb0.dll")
   (t (:default "libusb")))
  
 (defcfun "usb_init" :void)
@@ -302,7 +303,7 @@
 				  bytes-to-read
 				  timeout-ms)))))
       (if (= len bytes-to-read)
-	  data*
+	  data
 	  (subseq data 0 len)))))
 
 
@@ -325,8 +326,13 @@
 #+nil
 (defparameter *dobla* t)
 #+nil
+(defparameter *dobla* nil)
+#+nil
+(defparameter *val* #b01010101)
+#+nil
 (loop while *dobla* do
- (let ((l (loop for i below #x40 collect #b01010101)))
+ (let ((l (loop for i below #x40 collect *val* ;#b01010101
+	       )))
    (bulk-write *bla* (make-array (length l)
 				 :element-type '(unsigned-byte 8)
 				 :initial-contents l)
@@ -383,7 +389,7 @@
 (defmethod set-line ((c usb-connection))
   (let ((data (make-array 7
 			  :element-type '(unsigned-byte 8)
-			  :initial-contents '(#x00 #xc0 #x12 #x00 #x00 #x00 #x08))))
+			  :initial-contents '(#x80 #x25 #x00 #x00 #x00 #x00 #x08))))
     (control-msg c +set-line-request-type+ +set-line-request+
 		 :data data)
    data))
@@ -393,7 +399,14 @@
 ;; 921600 00 10 0e
 ;; 1228800 00 c0 12 ;; 580kHz when sending #b01010101 
 ;; 2457600 00 80 25 00 ;; this doesn't look right anymore
-;; 6000000 005B8D80
+;; 3000000 c0 c6 2d
+;; 6000000 005B8D80 ;; kind of works for #b11110000
+
+;; for the 6e6 baud setting i measure 4 bit are approximately 1us (or
+;; 1byte per 2us), i see bursts of 140us with 112us gaps. this means
+;; that the usb isn't able to keep up. i send 64byte packets, that
+;; would correspond to 96us (with 1 stop bit every byte)
+
 #+nil
 (set-line *bla*)
 
@@ -422,5 +435,5 @@
   (control-msg c +set-control-request-type+ +set-control-request+ :value value))
 
 #+nil
-(loop for i below 10001 do
+(loop for i below 100001 do
      (set-control-lines *bla* (if (evenp i) #x00 #xff)))
