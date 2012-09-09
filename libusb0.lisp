@@ -311,7 +311,7 @@
 	       :endpoint 2)))
 
 #+nil
-(let* ((str "!!ZA92;")
+(let* ((str "!!ZA98;")
        (a (make-array (length str)
 		      :element-type '(unsigned-byte 8)
 		      :initial-contents (map 'list #'char-code str))))
@@ -407,11 +407,9 @@
 ;; 1byte per 2us), i see bursts of 140us with 112us gaps. this means
 ;; that the usb isn't able to keep up. i send 64byte packets, that
 ;; would correspond to 96us (with 1 stop bit every byte)
-(defparameter *bla* nil)
-(defun prepare-zeiss ()
-  (set-line *bla*)
-
-
+(defvar *bla* nil)
+(defmethod prepare-zeiss ((con usb-connection))
+  (set-line con)
   (loop for (e f g) in '((r #x8484 0)
 			 (w #x0404 0)
 			 (r #x8484 0)
@@ -428,9 +426,9 @@
 			 (w 9 0))
      collect
        (ecase e
-	 (r (pl2303-vendor-read *bla* f g))
-	 (w (pl2303-vendor-write *bla* f g))))
-  (pl2303-vendor-write *bla* 0 #x61) ;; crtscts
+	 (r (pl2303-vendor-read con f g))
+	 (w (pl2303-vendor-write con f g))))
+  (pl2303-vendor-write con 0 #x61) ;; crtscts
   )
 
 #+nil
