@@ -1,4 +1,4 @@
-(eval-when (:compile-toplevel)
+(eval-when (:compile-toplevel :load-toplevel :execute)
  (require :cffi))
 (defpackage :libusb0
   (:use :cl :cffi)
@@ -10,11 +10,16 @@
 
 (in-package :libusb0)
 
-(define-foreign-library libusb0
-  (:windows "C:/Users/martin/Downloads/libusb-win32-bin-1.2.6.0/libusb-win32-bin-1.2.6.0/bin/amd64/libusb0.dll")
-  (t (:default "libusb")))
+(defparameter *libusb*
+  (define-foreign-library libusb0
+;; 
+    (:windows "C:/Users/martin/Downloads/libusb-win32-bin-1.2.6.0/bin/amd64/libusb0.dll")
+    (t (:default "libusb"))))
+
  
 (defcfun "usb_init" :void)
+#+nil
+(usb-init)
 (defcfun "usb_find_busses" :int)
 (defcfun "usb_find_devices" :int)
 
@@ -223,14 +228,16 @@
     (usb-close handle)))
 
 #+nil
-(defparameter *bla*
-  (make-instance 'usb-connection
-		 :vendor-id #x067b
-		 :product-id #x2303
-		 :configuration 1
-		 :interface 0
-		 ;:endpoint #x83 ; 2 #x81 #x83qu
-		 ))
+(progn
+  (defparameter *bla*
+    (make-instance 'usb-connection
+		   :vendor-id #x067b
+		   :product-id #x2303
+		   :configuration 1
+		   :interface 0
+					;:endpoint #x83 ; 2 #x81 #x83qu
+		   ))
+  (prepare-zeiss))
 ;;if (ps->dev->state != USB_STATE_CONFIGURED)
 ;;                retval = -EHOSTUNREACH;
 ;;[pid 30032] ioctl(5, USBDEVFS_IOCTL or USBDEVFS_IOCTL32, 0x7ffff5595790) = -1 EHOSTUNREACH (No route to host)
@@ -303,21 +310,35 @@
 				 :initial-contents l)
 	       :endpoint 2)))
 
-(let* ((str "ZA1000;")
-       (a (make-array (length str)
-		      :element-type '(unsigned-byte 8)
-		      :initial-contents (map 'list #'char-code str))))
-  (bulk-write *bla* a :endpoint 2))
-
-(let* ((str "Zi;")
+#+nil
+(let* ((str "!!ZA92;")
        (a (make-array (length str)
 		      :element-type '(unsigned-byte 8)
 		      :initial-contents (map 'list #'char-code str))))
   (bulk-write *bla* a :endpoint 2))
 
 #+nil
+(let* ((str "ZM1;")
+       (a (make-array (length str)
+		      :element-type '(unsigned-byte 8)
+		      :initial-contents (map 'list #'char-code str))))
+  (bulk-write *bla* a :endpoint 2))
+
+#+nil
+(loop for e in '(X Y Z) collect
+ (let* ((str (format nil "~Ai;" e))
+	(a (make-array (length str)
+		       :element-type '(unsigned-byte 8)
+		       :initial-contents (map 'list #'char-code str))))
+   (bulk-write *bla* a :endpoint 2)
+   (sleep .1)
+   (list e
+    (map 'string #'code-char
+	 (bulk-read *bla* #x5 :endpoint #x83)))))
+
+#+nil
 (map 'string #'code-char
- (bulk-read *bla* #x5 :endpoint #x83))
+     (bulk-read *bla* #x5 :endpoint #x83))
 
 
 
@@ -386,32 +407,35 @@
 ;; 1byte per 2us), i see bursts of 140us with 112us gaps. this means
 ;; that the usb isn't able to keep up. i send 64byte packets, that
 ;; would correspond to 96us (with 1 stop bit every byte)
+(defparameter *bla* nil)
+(defun prepare-zeiss ()
+  (set-line *bla*)
 
-#+nil
-(set-line *bla*)
 
-#+nil
-(loop for (e f g) in '((r #x8484 0)
-		       (w #x0404 0)
-		       (r #x8484 0)
-		       (r #x8383 0)
-		       (r #x8484 0)
-		       (w #x0404 1)
-		       (r #x8484 0)
-		       (r #x8383 0)
-		       (w 0 1)
-		       (w 1 0)
-		       (w 2 #x44)
-		       (w #x0606 0)
-		       (w 8 0)
-		       (w 9 0))
-   collect
-     (ecase e
-       ('r (pl2303-vendor-read *bla* f g))
-       ('w (pl2303-vendor-write *bla* f g))))
+  (loop for (e f g) in '((r #x8484 0)
+			 (w #x0404 0)
+			 (r #x8484 0)
+			 (r #x8383 0)
+			 (r #x8484 0)
+			 (w #x0404 1)
+			 (r #x8484 0)
+			 (r #x8383 0)
+			 (w 0 1)
+			 (w 1 0)
+			 (w 2 #x44)
+			 (w #x0606 0)
+			 (w 8 0)
+			 (w 9 0))
+     collect
+       (ecase e
+	 (r (pl2303-vendor-read *bla* f g))
+	 (w (pl2303-vendor-write *bla* f g))))
+  (pl2303-vendor-write *bla* 0 #x61) ;; crtscts
+  )
 
 #+nil
 (pl2303-vendor-write *bla* 0 #x61) ;; crtscts
+
 
 (defmethod set-control-lines ((c usb-connection) value)
   (declare (type (unsigned-byte 8) value))
