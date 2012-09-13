@@ -1,5 +1,4 @@
-(eval-when (:compile-toplevel :load-toplevel :execute)
- (require :cffi))
+#.(require :cffi)
 (defpackage :libusb0
   (:use :cl :cffi)
   (:export
@@ -12,11 +11,12 @@
 
 (defparameter *libusb*
   (define-foreign-library libusb0
-;; 
+    ;; 
     (:windows "C:/Users/martin/Downloads/libusb-win32-bin-1.2.6.0/bin/amd64/libusb0.dll")
     (t (:default "libusb"))))
 
- 
+(use-foreign-library libusb0)
+
 (defcfun "usb_init" :void)
 #+nil
 (usb-init)
@@ -710,27 +710,28 @@
 (erase-bitplane)
 
 
-(defun write-ex (address16 data)
+(defmethod write-ex ((c usb-connection) address16 data)
   (declare (type (unsigned-byte 16) address16))
-  (forthdd-write (pkg-write address16 data))
-  (check-ack (forthdd-read 1024)))
+  (forthdd-write c (pkg-write address16 data))
+  (check-ack (forthdd-read c 1024)))
 
-(defun burn-ex (blocknum32)
+(defmethod burn-ex ((c usb-connection) blocknum32)
   (declare (type (unsigned-byte 32) blocknum32))
-  (forthdd-write (pkg-burn blocknum32))
-  (check-ack (forthdd-read 1024)))
+  (forthdd-write c (pkg-burn blocknum32))
+  (check-ack (forthdd-read c 1024)))
 
-(defun write-page (blocknum32 page)
+(defmethod write-page ((c usb-connection) blocknum32 page)
   (declare (type (simple-array (unsigned-byte 8) 1) page)
 	   (type (unsigned-byte 32) blocknum32))
   ;; write in chunks of 256 bytes
   ;; one page in external flash is 2048 bytes (8 packets)
   (dotimes (i 8)
-    (write-ex (+ (* i 256) +EXT-FLASH-BUFFER+)
+    (write-ex c
+	      (+ (* i 256) +EXT-FLASH-BUFFER+)
 	      (subseq page 
 		      (* 256 i)
 		      (* 256 (1+ i)))))
-  (burn-ex blocknum32))
+  (burn-ex c blocknum32))
 
 #+nil
 (forthdd-write (pkg-write (+ (* 0 256) +EXT-FLASH-BUFFER+)
@@ -774,7 +775,7 @@
 
 
 
-(defun write-bitplane (img &key (image-number 0))
+(defmethod write-bitplane ((c usb-connection) img &key (image-number 0))
   ;; one bitplane contains 80 pages (smallest write unit) or 1.25
   ;; blocks (smallest erase unit)
   ;; 5 images are stored in 4 blocks
@@ -786,7 +787,8 @@
 	 (n (length img1))
 	 (p +EXT-FLASH-PAGE-SIZE+))
     (dotimes (i (floor n p))
-      (write-page (+ i (* 80 image-number) +EXT-FLASH-BASE+)
+      (write-page c
+		  (+ i (* 80 image-number) +EXT-FLASH-BASE+)
 		  (subseq img1
 			  (* i p)
 			  (* (1+ i) p))))))
