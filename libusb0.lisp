@@ -443,3 +443,419 @@
 (loop for i below 100001 do
      (set-control-lines *bla* (if (evenp i) #x00 #xff)))
 
+
+
+#+nil
+(progn
+ (defparameter *forthdd*
+   (make-instance 'usb-connection
+		  :vendor-id #x19ec
+		  :product-id #x0300
+		  :configuration 1
+		  :interface 0)))
+
+(defmethod forthdd-write ((c usb-connection) data)
+  (bulk-write c data :endpoint #x04))
+
+(defmethod forthdd-read ((c usb-connection) bytes-to-read)
+  (bulk-read c bytes-to-read :endpoint #x83))
+
+(defun make-byte-array (n &optional initial-contents)
+  (let ((a (make-array n :element-type '(unsigned-byte 8) :initial-element 0)))
+    (loop for i below (min n (length initial-contents)) do
+	 (setf (aref a i) (elt initial-contents i)))
+    a))
+
+(defun checksum (a &optional (n (length a)))
+  (declare (type (simple-array (unsigned-byte 8) 1) a))
+  (let ((r 0))
+   (dotimes (i n)
+      (incf r (aref a i))
+      (when (< 255 r)
+	(decf r 255)))
+    r))
+
+(defun pkg-read (address16 length-1)
+  (declare (type (unsigned-byte 16) address16)
+	   (type (unsigned-byte 8) length-1))
+  (let* ((content (list (char-code #\R)
+			(ldb (byte 8 8) address16)
+			(ldb (byte 8 0) address16)
+			length-1))
+	 (n (length content))
+	 (a (make-byte-array (1+ n) content)))
+    (setf (aref a n) (checksum a n))
+    a))
+
+(defun pkg-write (address16 data)
+  (declare (type (unsigned-byte 16) address16))
+  (let* ((nd (length data))
+	 (content (list (char-code #\W)
+			(ldb (byte 8 8) address16)
+			(ldb (byte 8 0) address16)
+			(1- nd)))
+	 (n (length content))
+	 (a (make-byte-array (+ 1 n nd) content)))
+    (dotimes (i nd)
+      (setf (aref a (+ i n)) (aref data i)))
+    (setf (aref a (+ n nd)) (checksum a (+ n nd)))
+    a))
+
+;; write(0x1234, 2, [0x02, 0x41, 0xF3])
+;; 57 12 34
+;; 02
+;; 02 41 F3 
+;; D6
+
+#+nil
+(format nil "~{~x ~}" (map 'list #'identity 
+			   (pkg-write #x1234 #(2 #x41 #xf3))))
+#+nil
+(pkg-read #x0101 01)
+
+(defun pkg-grab-or-burn (code blocknum32)
+  (declare (type (unsigned-byte 32) blocknum32))
+  (declare (type (unsigned-byte 8) code))
+  (let* ((content (list code
+			(ldb (byte 8 24) blocknum32)
+			(ldb (byte 8 16) blocknum32)
+			(ldb (byte 8 8) blocknum32)
+			(ldb (byte 8 0) blocknum32)))
+	 (n (length content))
+	 (a (make-byte-array (1+ n) content)))
+    (setf (aref a n) (checksum a n))
+    a))
+
+(defun pkg-grab (blocknum32)
+  ;; fetch one page from flash into ram
+  (pkg-grab-or-burn (char-code #\G) blocknum32))
+
+(defun pkg-burn (blocknum32)
+  ;; write one page of data from forthdd controlers ram into flash
+  (pkg-grab-or-burn (char-code #\B) blocknum32))
+
+(defun pkg-call (function &optional data)
+  (declare (type (unsigned-byte 8) function))
+  (push (length data) data)
+  (push function data)
+  (push (char-code #\C) data)
+  (let* ((n (length data))
+	 (a (make-byte-array (1+ n) data)))
+    (setf (aref a n) (checksum a n))
+    a))
+
+#+nil
+(pkg-call #x01 '(1 2 3))
+
+#+ni
+(forthdd-write *forthdd* (pkg-call 2))
+#+nil
+(forthdd-write (pkg-call 1)) ;; reboot
+
+#+nil
+(forthdd-write (pkg-call #x23 '(3)))
+
+(defmethod forthdd-talk ((c usb-connection) function &optional data)
+  (forthdd-write c (pkg-call function data))
+  (forthdd-read c 1024))
+
+#+nil
+(forthdd-talk #x0)
+
+#+nil
+(progn ;; get number of bitplanes
+  (forthdd-talk *forthdd* #x17))
+#+nil
+(progn ;; get number of ro
+  (forthdd-talk #x20))
+#+nil
+(progn ;; get selected ro
+  (forthdd-talk #x21))
+#+nil
+(progn ;; get default ro
+  (forthdd-talk #x22))
+;; image 41 is default
+#+nil
+(progn ;;activate
+  (forthdd-talk #x27))
+#+nil
+(progn ;;deactivate
+  (forthdd-talk #x28))
+#+nil
+(progn ;; reload repertoir
+  (forthdd-talk #x29))
+#+NIL
+(progn ;; get activation type
+  (forthdd-talk #x25))
+#+nil
+(progn ;; get activation state
+  (forthdd-talk #x26))
+
+#+nil
+(progn ;; switch image/running order
+  (forthdd-talk #x23 '(10)))
+#+nil
+(dotimes (i 100)
+  (sleep .1)
+  (format t "~d~%" i)
+  (progn ;; switch image/running order
+    (forthdd-talk #x23 (list i))))
+
+#+nil
+(dotimes (i 10)
+ (loop for i below 40 do
+      (sleep .3)
+      (forthdd-talk #x23 (list (random 36)))))
+
+#+nil
+(defparameter *resp* (forthdd-read 1024))
+
+#+nil ;; timestamp
+(map 'string #'code-char (forthdd-talk 2))
+
+;; => "rTue Jan  5 10:20:15 2010
+;; "
+
+
+(defun slave-package (pkg)
+  (declare (type (simple-array (unsigned-byte 8) 1) pkg))
+  (ecase (aref pkg 0)
+    (97 'ack) ;; a 
+    (101 'error) ;; e 
+    (112 'pro) ;; p
+    (120 'exc) ;; x 
+    (114 'ret) ;; r
+    (108 'log) ;; l
+    ))
+
+#|
+#x17 getNumBitplanes
+#x20 getROCount
+#x21 getSelectedRO
+#x22 getDefaultRO
+#x23 setSelectedRO byte
+#x24 setDefaultRO byte
+
+|#
+
+
+(defparameter cmds
+  `((0 is-ap)
+    (1 reboot)
+    (2 timestamp)
+    (3 version)
+    (5 erase-block (blocknum 4))
+    (#x17 get-num-bitplanes)
+    (#x20 get-ro-count)
+    (#x21 get-selected-ro)
+    (#x22 get-default-ro)
+    (#x23 set-selected-ro (num 1))
+    (#x24 set-default-ro (num 1))
+    (#x25 get-activation-type)
+    (#x26 get-activation-state)
+    (#x27 activate)
+    (#x28 deactivate)
+    (#x29 reload-repertoire)
+    (#x30 save-settings)
+    (#x31 set-led (brightness 1))
+    (#x32 get-led)
+    (#x33 set-flip-testpattern (out-ctrl 1))
+    (#x34 get-flip-testpattern)
+    (#x35 get-daughterboard-type)
+    (#x36 adc-read (channel 1))
+    (#x37 board-id)
+    (#x38 display-type)
+    (#x39 display-temp)
+    (#x3b get-serial-num)))
+
+(defconstant +EXT-FLASH-BASE+ #x01000000) ;; first page
+(defconstant +EXT-FLASH-BUFFER+ #x0400) ;; start of flash buffer in RAM
+(defconstant +EXT-FLASH-PAGE-SIZE+ #x0800)
+
+#+nil
+(time
+ (progn ;; erase all, takes 43s
+   (loop for page from #x01000000 below #x0100f000 by 64 do
+	(check-ack
+	 (erase-block page)))))
+#+nil
+(erase-block #x01000040)
+
+#+nil
+(loop for page from #x01000000 below #x01000f00 by 64 do
+	(check-ack
+	 (erase-block page)))
+
+(defun erase-block (blocknum)
+  "Erase the Flash block."
+  (declare (type (unsigned-byte 32) blocknum))
+  (forthdd-talk 5
+		(loop for i below 32 by 8 collect
+		   ;; msb first
+		     (ldb (byte 8 (- 24 i)) blocknum))))
+
+(defun check-ack (pkg)
+  (unless (eq 'ack (slave-package pkg))
+    (break "error, device didnt acknowledge: ~a" pkg)))
+
+(defun erase-bitplane (&optional (image-number 0))
+  (check-ack
+   (erase-block (+ (* image-number #x40)
+		   +EXT-FLASH-BASE+)))
+  (check-ack
+   (erase-block (+ (* (1+ image-number) #x40) 
+		   +EXT-FLASH-BASE+))))
+
+#+nil
+(erase-bitplane)
+
+
+(defun write-ex (address16 data)
+  (declare (type (unsigned-byte 16) address16))
+  (forthdd-write (pkg-write address16 data))
+  (check-ack (forthdd-read 1024)))
+
+(defun burn-ex (blocknum32)
+  (declare (type (unsigned-byte 32) blocknum32))
+  (forthdd-write (pkg-burn blocknum32))
+  (check-ack (forthdd-read 1024)))
+
+(defun write-page (blocknum32 page)
+  (declare (type (simple-array (unsigned-byte 8) 1) page)
+	   (type (unsigned-byte 32) blocknum32))
+  ;; write in chunks of 256 bytes
+  ;; one page in external flash is 2048 bytes (8 packets)
+  (dotimes (i 8)
+    (write-ex (+ (* i 256) +EXT-FLASH-BUFFER+)
+	      (subseq page 
+		      (* 256 i)
+		      (* 256 (1+ i)))))
+  (burn-ex blocknum32))
+
+#+nil
+(forthdd-write (pkg-write (+ (* 0 256) +EXT-FLASH-BUFFER+)
+			  (make-array 256 :element-type '(unsigned-byte 8))))
+#+nil
+(forthdd-read 1024)
+#+nil
+(pkg-write (+ (* 0 256) +EXT-FLASH-BUFFER+)
+	   (make-array 256 :element-type '(unsigned-byte 8)))
+
+;; from 0x01 00 00 00 there are 960 blocks for images (120 MB)
+;; from 0x01 00 F1 00 there are 60 blocks for more data (7.5 MB)
+
+;; the image is filled from right to left and top to bottom
+;; the first 160 bytes are the top row
+
+;; each group of 8 bytes appear from left to right
+;; each byte is displayed with the least significant
+;; bit on the left
+
+;; bytes: 152 153 154 .. 8 9 10 11 12 13 14 15 0 1 2 3 4 5 6 7
+;; bits: ... 0 1 2 3 4 5 6 7 0 1 2 3 4 5 6 7
+
+(defun create-bitplane (img)
+  (declare (type (simple-array (unsigned-byte 8) (1024 1280)) img)
+	   (values (simple-array (unsigned-byte 8) (1024 160)) &optional))
+  (let* ((w 160)
+	 (h 1024)
+	 (bits (make-array (list h w)
+			   :element-type '(unsigned-byte 8))))
+    (dotimes (j h)
+      (dotimes (ii 20)
+	(dotimes (i 8)
+	  (let ((iii (+ i (* 8 ii)))
+		(iii2 (+ (- 7 i) (* 8 ii))))
+	    (dotimes (k 8)
+	      (setf (ldb (byte 1 k) (aref bits j iii))
+		    (if (= 0 (aref img j (+ k (* 8 iii2))))
+			  0 1)))))))
+    bits))
+
+
+
+(defun write-bitplane (img &key (image-number 0))
+  ;; one bitplane contains 80 pages (smallest write unit) or 1.25
+  ;; blocks (smallest erase unit)
+  ;; 5 images are stored in 4 blocks
+  ;; 1280 x 1024 / 8 = 163840 bytes
+  ;; 1 page = 2048 bytes
+  ;; 1 block = 131072 bytes
+  (declare (type (simple-array (unsigned-byte 8) (1024 160)) img))
+  (let* ((img1 (sb-ext:array-storage-vector img))
+	 (n (length img1))
+	 (p +EXT-FLASH-PAGE-SIZE+))
+    (dotimes (i (floor n p))
+      (write-page (+ i (* 80 image-number) +EXT-FLASH-BASE+)
+		  (subseq img1
+			  (* i p)
+			  (* (1+ i) p))))))
+
+#+nil
+(progn ;; write some 8pixel stripes
+ (let* ((w 160)
+	(h 1024)
+	(a (make-array (list h w) :element-type '(unsigned-byte 8))))
+   (dotimes (j h)
+     (dotimes (i w)
+       (when (oddp i)
+	 (setf (aref a j i) #xff))))
+   (write-bitplane a)))
+
+#+nil
+(progn ;; write white image
+  (let* ((a (make-array '(1024 160)
+			:element-type '(unsigned-byte 8)
+			:initial-element #xff)))
+    (write-bitplane a)))
+
+#+nil
+(erase-bitplane 0)
+#+nil
+(time 
+ (let* ((h 1024)
+	(w 1280)
+	(a 
+	 (make-array (list h w)
+		     :element-type '(unsigned-byte 8))))
+   (dotimes (i w)
+     (dotimes (j h)
+       (let ((r (sqrt (+ (expt (- i (floor w 2)) 2)
+			 (expt (- j (floor h 2)) 2)))))
+	 (when (< r 400)
+	   (setf (aref a j i) 1)))))
+   (write-bitplane (create-bitplane a)
+		   :image-number 0)))
+;; after uploading a bitplane, issue reload-repertoir rpc call
+#+nil
+(progn
+ (progn ;;deactivate
+   (forthdd-talk #x28))
+ (progn ;; reload repertoir
+   (forthdd-talk #x29))
+ (progn ;;activate
+   (forthdd-talk #x27))
+ (progn ;; switch image/running order
+   (forthdd-talk #x23 '(0))))
+
+#+nil
+(progn ;;deactivate
+  (forthdd-talk #x28))
+#+nil
+(progn ;; reload repertoir
+  (forthdd-talk #x29))
+#+nil
+(progn ;;activate
+  (forthdd-talk #x27))
+#+nil
+(dotimes (i 103)
+  (sleep .3)
+ (progn ;; switch image/running order
+   (forthdd-talk #x23 (list i))))
+
+#+nil
+(progn ;; switch image/running order
+  (forthdd-talk #x23 '(19)))
+#+nil
+(progn ;; switch image/running order
+  (forthdd-talk #x23 '(0)))
