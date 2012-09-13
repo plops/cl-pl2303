@@ -567,7 +567,7 @@
   (forthdd-talk *forthdd* #x17))
 #+nil
 (progn ;; get number of ro
-  (forthdd-talk #x20))
+  (forthdd-talk *forthdd* #x20))
 #+nil
 (progn ;; get selected ro
   (forthdd-talk #x21))
@@ -577,7 +577,7 @@
 ;; image 41 is default
 #+nil
 (progn ;;activate
-  (forthdd-talk #x27))
+  (forthdd-talk *forthdd* #x27))
 #+nil
 (progn ;;deactivate
   (forthdd-talk #x28))
@@ -593,7 +593,7 @@
 
 #+nil
 (progn ;; switch image/running order
-  (forthdd-talk #x23 '(10)))
+  (forthdd-talk *forthdd* #x23 '(102)))
 #+nil
 (dotimes (i 100)
   (sleep .1)
