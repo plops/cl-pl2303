@@ -445,6 +445,7 @@
 
 
 
+(defvar *forthdd* nil)
 #+nil
 (progn
  (defparameter *forthdd*
