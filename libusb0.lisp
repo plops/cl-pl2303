@@ -677,20 +677,21 @@
 (time
  (progn ;; erase all, takes 43s
    (loop for page from #x01000000 below #x0100f000 by 64 do
+	(format t "~a~%" page)
 	(check-ack
-	 (erase-block page)))))
+	 (erase-block *forthdd* page)))))
 #+nil
 (erase-block #x01000040)
 
 #+nil
 (loop for page from #x01000000 below #x01000f00 by 64 do
-	(check-ack
-	 (erase-block page)))
+     (check-ack
+      (erase-block *forthdd* page)))
 
-(defun erase-block (blocknum)
+(defmethod erase-block ((c usb-connection) blocknum)
   "Erase the Flash block."
   (declare (type (unsigned-byte 32) blocknum))
-  (forthdd-talk 5
+  (forthdd-talk c 5
 		(loop for i below 32 by 8 collect
 		   ;; msb first
 		     (ldb (byte 8 (- 24 i)) blocknum))))
@@ -818,47 +819,97 @@
 (time 
  (let* ((h 1024)
 	(w 1280)
-	(a 
-	 (make-array (list h w)
-		     :element-type '(unsigned-byte 8))))
-   (dotimes (i w)
-     (dotimes (j h)
-       (let ((r (sqrt (+ (expt (- i (floor w 2)) 2)
-			 (expt (- j (floor h 2)) 2)))))
-	 (when (< r 400)
-	   (setf (aref a j i) 1)))))
-   (write-bitplane (create-bitplane a)
-		   :image-number 0)))
+	(index 0))
+   (loop for x from -200 below 200 by 40 do ;; takes 230s
+	(loop for y from -200 below 200 by 40 do
+	     (let ((cx 706)
+		   (cy 735)
+		   (a (make-array (list h w)
+				  :element-type '(unsigned-byte 8))))
+	       (dotimes (i w)
+		 (dotimes (j h)
+		   (let* ((ii (- i cx y 10))
+			  (jj (- j cy x 10))
+			  (r (sqrt (+ (expt ii 2)
+				      (expt jj 2)))))
+		     (when (< r 30)
+		       (setf (aref a j i) 1)))))
+	       (let ((image-number (+ 100 index))) ;; numbers 100..199
+	       (write-lcos-file a image-number)    
+	       
+	       (write-bitplane *forthdd*
+			       (create-bitplane a)
+			       :image-number image-number)))
+	     (incf index)))))
+
+
+#+nil
+(when (< (sin (/ r 10)) 0) ;; concentric circles 2
+  (setf (aref a j i) 1))
+
+#+nil
+(setf (aref a j i) (if (< 0 (sin (* 30 (phase (complex ii jj)))))
+				1 ;; siemens star 3
+				0))
+
+#+nil
+(let* ((ii (- i 740)) ;; siemens star centered 4
+	      (jj (- j 790))
+	      (r (sqrt (+ (expt ii 2)
+			  (expt jj 2)))))
+	 (setf (aref a j i) (if (< 0 (sin (* 30 (phase (complex ii jj)))))
+				1
+				0)))
+
+#+nil
+(let ((cx 706) ;; grid centered on illumination
+      (cy 735))
+  (dotimes (i w)
+    (dotimes (j h)
+      (loop for x from -200 below 200 by 40 do
+	   (loop for y from -200 below 200 by 40 do
+		(let* ((ii (- i cx y 10))
+		       (jj (- j cy x 10))
+		       (r (sqrt (+ (expt ii 2)
+				   (expt jj 2)))))
+		  (when (< r 30)
+		    (setf (aref a j i) 1))))))))
+
+(defun write-lcos-file (img2 image-number)
+  (destructuring-bind (h w) (array-dimensions img2)
+   (let* ((png (make-instance 'zpng:png
+			      :color-type :grayscale
+			      :width w
+			      :height h))
+	  (image (zpng:data-array png)))
+     (dotimes (y h (zpng:write-png
+		    png
+		    (format nil "c:/Users/martin/stage/cl-web-ui/lcos/~4,'0d.png"
+			    image-number)))
+       (dotimes (x w)
+	 (setf (aref image y x 0) (* 255 (aref img2 y x))))))))
+
 ;; after uploading a bitplane, issue reload-repertoir rpc call
 #+nil
 (progn
  (progn ;;deactivate
-   (forthdd-talk #x28))
+   (forthdd-talk *forthdd* #x28))
  (progn ;; reload repertoir
-   (forthdd-talk #x29))
+   (forthdd-talk *forthdd* #x29))
  (progn ;;activate
-   (forthdd-talk #x27))
+   (forthdd-talk *forthdd* #x27))
  (progn ;; switch image/running order
-   (forthdd-talk #x23 '(0))))
+   (forthdd-talk *forthdd* #x23 '(0))))
 
 #+nil
 (progn ;;deactivate
-  (forthdd-talk #x28))
+  (forthdd-talk *forthdd* #x28))
 #+nil
 (progn ;; reload repertoir
-  (forthdd-talk #x29))
+  (forthdd-talk *forthdd* #x29))
 #+nil
 (progn ;;activate
-  (forthdd-talk #x27))
-#+nil
-(dotimes (i 103)
-  (sleep .3)
- (progn ;; switch image/running order
-   (forthdd-talk #x23 (list i))))
-
+  (forthdd-talk *forthdd* #x27))
 #+nil
 (progn ;; switch image/running order
-  (forthdd-talk #x23 '(19)))
-#+nil
-(progn ;; switch image/running order
-  (forthdd-talk #x23 '(0)))
+  (forthdd-talk *forthdd* #x23 '(1)))
