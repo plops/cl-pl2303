@@ -818,28 +818,27 @@
 #+nil
 (time 
  (let* ((h 1024)
-	(w 1280)
+	(w 1280) 
 	(index 0))
-   (loop for x from -200 below 200 by 40 do ;; takes 230s
-	(loop for y from -200 below 200 by 40 do
+   (loop for x from -200 below 200 by 80 do ;; takes 57s
+	(loop for y from -200 below 200 by 80 do ;; images with 80px pitch and 60px radius in 50..74
 	     (let ((cx 706)
 		   (cy 735)
 		   (a (make-array (list h w)
 				  :element-type '(unsigned-byte 8))))
 	       (dotimes (i w)
 		 (dotimes (j h)
-		   (let* ((ii (- i cx y 10))
-			  (jj (- j cy x 10))
+		   (let* ((ii (- i cx y 30))
+			  (jj (- j cy x 30))
 			  (r (sqrt (+ (expt ii 2)
 				      (expt jj 2)))))
-		     (when (< r 30)
+		     (when (< r 60)
 		       (setf (aref a j i) 1)))))
-	       (let ((image-number (+ 100 index))) ;; numbers 100..199
-	       (write-lcos-file a image-number)    
-	       
-	       (write-bitplane *forthdd*
-			       (create-bitplane a)
-			       :image-number image-number)))
+	       (let ((image-number (+ 50 index)))
+		 (write-lcos-file a image-number)    
+		 (write-bitplane *forthdd*
+				 (create-bitplane a)
+				 :image-number image-number)))
 	     (incf index)))))
 
 
@@ -863,7 +862,7 @@
 
 #+nil
 (let ((cx 706) ;; grid centered on illumination
-      (cy 735))
+      (cy 735));; 10x10 disks with 30px radius and 40px pitch
   (dotimes (i w)
     (dotimes (j h)
       (loop for x from -200 below 200 by 40 do
@@ -874,6 +873,29 @@
 				   (expt jj 2)))))
 		  (when (< r 30)
 		    (setf (aref a j i) 1))))))))
+
+
+#+NIL
+(loop for x from -200 below 200 by 80 do ;; takes 57s
+	(loop for y from -200 below 200 by 80 do ;; images with 80px pitch and 60px radius in 50..74
+	     (let ((cx 706)
+		   (cy 735)
+		   (a (make-array (list h w)
+				  :element-type '(unsigned-byte 8))))
+	       (dotimes (i w)
+		 (dotimes (j h)
+		   (let* ((ii (- i cx y 30))
+			  (jj (- j cy x 30))
+			  (r (sqrt (+ (expt ii 2)
+				      (expt jj 2)))))
+		     (when (< r 60)
+		       (setf (aref a j i) 1)))))
+	       (let ((image-number (+ 50 index)))
+		 (write-lcos-file a image-number)    
+		 (write-bitplane *forthdd*
+				 (create-bitplane a)
+				 :image-number image-number)))
+	     (incf index)))
 
 (defun write-lcos-file (img2 image-number)
   (destructuring-bind (h w) (array-dimensions img2)
