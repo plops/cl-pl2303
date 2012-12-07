@@ -571,17 +571,17 @@
   (forthdd-talk *forthdd* #x20))
 #+nil
 (progn ;; get selected ro
-  (forthdd-talk #x21))
+  (forthdd-talk *forthdd* #x21))
 #+nil
 (progn ;; get default ro
-  (forthdd-talk #x22))
+  (forthdd-talk *forthdd* #x22))
 ;; image 41 is default
 #+nil
 (progn ;;activate
   (forthdd-talk *forthdd* #x27))
 #+nil
 (progn ;;deactivate
-  (forthdd-talk #x28))
+  (forthdd-talk *forthdd* #x28))
 #+nil
 (progn ;; reload repertoir
   (forthdd-talk #x29))
@@ -590,11 +590,11 @@
   (forthdd-talk #x25))
 #+nil
 (progn ;; get activation state
-  (forthdd-talk #x26))
+  (forthdd-talk *forthdd* #x26))
 
 #+nil
 (progn ;; switch image/running order
-  (forthdd-talk *forthdd* #x23 '(102)))
+  (forthdd-talk *forthdd* #x23 '(25)))
 #+nil
 (dotimes (i 100)
   (sleep .1)
@@ -682,6 +682,8 @@
 	 (erase-block *forthdd* page)))))
 #+nil
 (erase-block #x01000040)
+
+#xf000
 
 #+nil
 (loop for page from #x01000000 below #x01000f00 by 64 do
@@ -795,6 +797,34 @@
 			  (* i p)
 			  (* (1+ i) p))))))
 
+(defun read-pgm (filename)
+  (declare ((or pathname string) filename)
+	   (values (or (simple-array (unsigned-byte 8) 2)
+		       (simple-array (unsigned-byte 16) 2)) &optional))
+  (with-open-file (s filename)
+    (unless (equal (symbol-name (read s)) "P5")
+      (error "no PGM file"))
+    (let* ((w (read s))
+	   (h (read s))
+	   (grays (read s))
+	   (pos (file-position s)))
+      (declare ((integer 0 65535) grays w h))
+      (let* ((type (if (<= grays 255)
+		       '(unsigned-byte 8)
+		       '(unsigned-byte 16)))
+	     (data (make-array (list h w)
+			       :element-type type))
+	     (data-1d (make-array (* h w)
+				  :element-type type
+				  :displaced-to data)))
+	(with-open-file (s2 filename :element-type type)
+	  (file-position s2 pos)
+	  (read-sequence data-1d s2))
+       	data))))
+
+#+nil
+(defparameter *f-image* (read-pgm "c:/Users/martin/F.pgm"))
+
 #+nil
 (progn ;; write some 8pixel stripes
  (let* ((w 160)
@@ -815,31 +845,235 @@
 
 #+nil
 (erase-bitplane 0)
+#+ni
+(time 
+ (let* ((h 1024)
+	(w 1280) 
+	(index 130)
+	(a (make-array (list h w)
+		       :element-type '(unsigned-byte 8))))
+   
+   (progn ;; image with bright f
+     (dotimes (i w)
+       (dotimes (j h)
+	 (setf (aref a j i) (if (=  255 (aref *f-image*  j i))
+				1 0))))
+     (let ((image-number (+ 0 index)))
+       (write-lcos-file a image-number)    
+        (write-bitplane *forthdd*
+		       (create-bitplane a)
+			:image-number image-number))
+      (incf index))))
+
 #+nil
 (time 
  (let* ((h 1024)
 	(w 1280) 
-	(index 0))
+	(index 100)
+	(a (make-array (list h w)
+		       :element-type '(unsigned-byte 8))))
    (loop for x from -200 below 200 by 80 do ;; takes 57s
-	(loop for y from -200 below 200 by 80 do ;; images with 80px pitch and 60px radius in 50..74
-	     (let ((cx 706)
-		   (cy 735)
-		   (a (make-array (list h w)
-				  :element-type '(unsigned-byte 8))))
-	       (dotimes (i w)
-		 (dotimes (j h)
-		   (let* ((ii (- i cx y 30))
-			  (jj (- j cy x 30))
-			  (r (sqrt (+ (expt ii 2)
-				      (expt jj 2)))))
-		     (when (< r 60)
-		       (setf (aref a j i) 1)))))
-	       (let ((image-number (+ 50 index)))
-		 (write-lcos-file a image-number)    
-		 (write-bitplane *forthdd*
-				 (create-bitplane a)
-				 :image-number image-number)))
-	     (incf index)))))
+		(loop for y from -200 below 200 by 80 do ;; images with 80px pitch and 60px radius in 50..74
+		     (let ((cx 706)
+			   (cy 735)
+			   (a (make-array (list h w)
+					  :element-type '(unsigned-byte 8))))
+		       (dotimes (i w)
+			 (dotimes (j h)
+			   (let* ((ii (- i cx y 30))
+				  (jj (- j cy x 30))
+				  (r (sqrt (+ (expt ii 2)
+					      (expt jj 2)))))
+			     (if (< r 60)
+				 (setf (aref a j i) 1)
+				 (setf (aref a j i) 0)))))
+		       (let ((image-number (+ 0 index)))
+			 (write-lcos-file a image-number)    
+			 (write-bitplane *forthdd*
+					 (create-bitplane a)
+					 :image-number image-number)))
+		     (incf index)))
+   (progn ;; dark image (in microscope)
+     (dotimes (i w)
+       (dotimes (j h)
+	 (setf (aref a j i) 0)))
+     (let ((image-number (+ 0 index)))
+       (write-lcos-file a image-number)    
+       (write-bitplane *forthdd*
+		       (create-bitplane a)
+			:image-number image-number))
+      (incf index))
+   (progn ;; white image (in microscope)
+      (dotimes (i w)
+	(dotimes (j h)
+	  (setf (aref a j i) 1)))
+      (let ((image-number (+ 0 index)))
+	(write-lcos-file a image-number)    
+	(write-bitplane *forthdd*
+			(create-bitplane a)
+			:image-number image-number))
+      (incf index))
+   (progn ;; siemens star
+     (dotimes (j h)
+      (dotimes (i w)
+	(let* ((ii (- i 706)) ;; siemens star centered 4
+	       (jj (- j 735))
+	       (r (sqrt (+ (expt ii 2)
+			   (expt jj 2)))))
+	  (setf (aref a j i) (if (< 0 (sin (* 30 (phase (complex ii jj)))))
+				 0
+				 1)))))
+     (let ((image-number (+ 0 index)))
+       (write-lcos-file a image-number)    
+       (write-bitplane *forthdd*
+		       (create-bitplane a)
+		       :image-number image-number))
+     (incf index))
+   (progn ;; horizontal bar
+     (dotimes (i w)
+       (dotimes (j h)
+	(let* ((ii (- i 706))
+	       (jj (- j 735)))
+	  (setf (aref a j i) (if (< (abs ii) 40)
+				 1
+				 0)))))
+     (let ((image-number (+ 0 index)))
+       (write-lcos-file a image-number)    
+       (write-bitplane *forthdd*
+		       (create-bitplane a)
+		       :image-number image-number))
+     (incf index))
+   (progn ;; vertical bar
+     (dotimes (i w)
+       (dotimes (j h)
+	(let* ((ii (- i 706))
+	       (jj (- j 735)))
+	  (setf (aref a j i) (if (< (abs jj) 40)
+				 1
+				 0)))))
+     (let ((image-number (+ 0 index)))
+       (write-lcos-file a image-number)    
+       (write-bitplane *forthdd*
+		       (create-bitplane a)
+		       :image-number image-number))
+     (incf index))))
+
+
+#+nil
+(let* ((h 1024)
+	(w 1280) 
+	(index 100)
+	(a (make-array (list h w)
+		       :element-type '(unsigned-byte 8))))
+   (loop for x from -200 below 200 by 80 do ;; takes 57s
+		(loop for y from -200 below 200 by 80 do ;; images with 80px pitch and 60px radius in 50..74
+		     (let ((cx 706)
+			   (cy 735)
+			   (a (make-array (list h w)
+					  :element-type '(unsigned-byte 8))))
+		       (dotimes (i w)
+			 (dotimes (j h)
+			   (let* ((ii (- i cx y 30))
+				  (jj (- j cy x 30))
+				  (r (sqrt (+ (expt ii 2)
+					      (expt jj 2)))))
+			     (if (< r 60)
+				 (setf (aref a j i) 1)
+				 (setf (aref a j i) 0)))))
+		       (let ((image-number (+ 0 index)))
+			 (write-lcos-file a image-number)    
+			 (write-bitplane *forthdd*
+					 (create-bitplane a)
+					 :image-number image-number)))
+		     (incf index)))
+   (progn ;; dark image (in microscope)
+     (dotimes (i w)
+       (dotimes (j h)
+	 (setf (aref a j i) 0)))
+     (let ((image-number (+ 0 index)))
+       (write-lcos-file a image-number)    
+       (write-bitplane *forthdd*
+		       (create-bitplane a)
+			:image-number image-number))
+      (incf index))
+   (progn ;; white image (in microscope)
+      (dotimes (i w)
+	(dotimes (j h)
+	  (setf (aref a j i) 1)))
+      (let ((image-number (+ 0 index)))
+	(write-lcos-file a image-number)    
+	(write-bitplane *forthdd*
+			(create-bitplane a)
+			:image-number image-number))
+      (incf index))
+   (progn ;; siemens star
+     (dotimes (j h)
+      (dotimes (i w)
+	(let* ((ii (- i 706)) ;; siemens star centered 4
+	       (jj (- j 735))
+	       (r (sqrt (+ (expt ii 2)
+			   (expt jj 2)))))
+	  (setf (aref a j i) (if (< 0 (sin (* 30 (phase (complex ii jj)))))
+				 0
+				 1)))))
+     (let ((image-number (+ 0 index)))
+       (write-lcos-file a image-number)    
+       (write-bitplane *forthdd*
+		       (create-bitplane a)
+		       :image-number image-number))
+     (incf index))
+   (progn ;; horizontal bar
+     (dotimes (i w)
+       (dotimes (j h)
+	(let* ((ii (- i 706))
+	       (jj (- j 735)))
+	  (setf (aref a j i) (if (< (abs ii) 40)
+				 1
+				 0)))))
+     (let ((image-number (+ 0 index)))
+       (write-lcos-file a image-number)    
+       (write-bitplane *forthdd*
+		       (create-bitplane a)
+		       :image-number image-number))
+     (incf index))
+   (progn ;; vertical bar
+     (dotimes (i w)
+       (dotimes (j h)
+	(let* ((ii (- i 706))
+	       (jj (- j 735)))
+	  (setf (aref a j i) (if (< (abs jj) 40)
+				 1
+				 0)))))
+     (let ((image-number (+ 0 index)))
+       (write-lcos-file a image-number)    
+       (write-bitplane *forthdd*
+		       (create-bitplane a)
+		       :image-number image-number))
+     (incf index)))
+
+
+
+
+
+#+nil
+(time 
+ (let* ((h 1024)
+	(w 1280) 
+	(index 26))
+   (let ((cx 706)
+	 (cy 735)
+	 (a (make-array (list h w)
+			:element-type '(unsigned-byte 8))))
+     (progn
+      (dotimes (i w)
+	(dotimes (j h)
+	  (setf (aref a j i) 1)))
+      (let ((image-number (+ 0 index)))
+	(write-lcos-file a image-number)    
+	(write-bitplane *forthdd*
+			(create-bitplane a)
+			:image-number image-number))))
+   (incf index)))
 
 
 #+nil
@@ -853,12 +1087,12 @@
 
 #+nil
 (let* ((ii (- i 740)) ;; siemens star centered 4
-	      (jj (- j 790))
-	      (r (sqrt (+ (expt ii 2)
-			  (expt jj 2)))))
-	 (setf (aref a j i) (if (< 0 (sin (* 30 (phase (complex ii jj)))))
-				1
-				0)))
+       (jj (- j 790))
+       (r (sqrt (+ (expt ii 2)
+		   (expt jj 2)))))
+  (setf (aref a j i) (if (< 0 (sin (* 30 (phase (complex ii jj)))))
+			 1
+			 0)))
 
 #+nil
 (let ((cx 706) ;; grid centered on illumination
@@ -934,4 +1168,4 @@
   (forthdd-talk *forthdd* #x27))
 #+nil
 (progn ;; switch image/running order
-  (forthdd-talk *forthdd* #x23 '(1)))
+  (forthdd-talk *forthdd* #x23 '(130)))
